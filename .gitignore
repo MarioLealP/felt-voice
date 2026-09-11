@@ -1,0 +1,16 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Environment-specific config — never commit real values
+.env
+
+# Downloaded voice models — fetched via piper.download_voices, not committed
+voices/
