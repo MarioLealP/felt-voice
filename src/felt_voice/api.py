@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from felt_voice.config import load_config
 from felt_voice.gpu_stats import get_gpu_stats
+from felt_voice.rvc import convert as rvc_convert
 from felt_voice.stt import transcribe
 from felt_voice.tts import synthesize
 
@@ -28,6 +29,8 @@ class STTResponse(BaseModel):
 async def tts_endpoint(req: TTSRequest) -> Response:
     config = load_config()
     audio = synthesize(req.text, config)
+    if config.rvc_model_path:
+        audio = rvc_convert(audio, config)
     return Response(content=audio, media_type="audio/wav")
 
 
