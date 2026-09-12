@@ -9,6 +9,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from felt_voice.config import load_config
+from felt_voice.gpu_stats import get_gpu_stats
 from felt_voice.stt import transcribe
 from felt_voice.tts import synthesize
 
@@ -38,6 +39,14 @@ async def stt_endpoint(file: UploadFile = File(...)) -> STTResponse:
         tmp.flush()
         text = transcribe(tmp.name, config)
     return STTResponse(text=text)
+
+
+@app.get("/v1/gpu-status")
+async def gpu_status_endpoint() -> dict:
+    stats = get_gpu_stats()
+    if stats is None:
+        return {"available": False}
+    return {"available": True, **stats}
 
 
 def run() -> None:
