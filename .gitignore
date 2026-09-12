@@ -14,3 +14,7 @@ wheels/
 
 # Downloaded voice models — fetched via piper.download_voices, not committed
 voices/
+
+# Downloaded RVC model weights (e.g. models/rvc-teto/) — large binary
+# files fetched from a public source, not committed
+models/
