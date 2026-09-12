@@ -8,6 +8,7 @@ from pathlib import Path
 from piper import PiperVoice
 
 from felt_voice.config import VoiceConfig
+from felt_voice.text_normalize import normalize_for_speech
 
 _voice = None
 _loaded_name = None
@@ -26,5 +27,5 @@ def synthesize(text: str, config: VoiceConfig) -> bytes:
     voice = _get_voice(config)
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as wav_file:
-        voice.synthesize_wav(text, wav_file)
+        voice.synthesize_wav(normalize_for_speech(text), wav_file)
     return buffer.getvalue()
