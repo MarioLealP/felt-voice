@@ -13,7 +13,12 @@ class VoiceConfig(BaseSettings):
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
 
-    # TTS
+    # Keep curatable Chatterbox tags ([sigh], [gasp], ...) instead of
+    # stripping every one. Off for live speech; for WP-19's offline batch.
+    # [laugh]/[chuckle] are stripped regardless. See tags.py.
+    allow_tags: bool = False
+
+    # Piper (fallback engine, or primary with tts_engine=piper)
     piper_voice: str = "en_US-lessac-medium"
     piper_voices_dir: str = "./voices"
 
