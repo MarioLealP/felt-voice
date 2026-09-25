@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Felt's voice: local STT (faster-whisper) + TTS (Piper)"
 requires-python = ">=3.12"
 dependencies = [
+    "chatterbox-tts==0.1.7",
     "fastapi>=0.141.1",
     "faster-whisper>=1.2.1",
     "infer-rvc-python>=1.3.1",
@@ -11,6 +12,7 @@ dependencies = [
     "pydantic-settings>=2.15.0",
     "python-multipart>=0.0.32",
     "setuptools<81",
+    "soundfile>=0.14.0",
     "uvicorn[standard]>=0.52.4",
 ]
 
@@ -29,3 +31,9 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv]
+# torchcrepe 0.0.20 (via infer-rvc-python) pins librosa==0.9.1; chatterbox-tts
+# pins librosa==0.11.0. RVC runs fine on 0.11.0 (proven in felt-voice-next,
+# 2026-09-25), so override the stale pin.
+override-dependencies = ["librosa==0.11.0"]
