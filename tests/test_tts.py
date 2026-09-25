@@ -7,6 +7,7 @@ class _FakeVoice:
         self.path = path
 
     def synthesize_wav(self, text, wav_file):
+        self.last_text = text
         wav_file.setnchannels(1)
         wav_file.setsampwidth(2)
         wav_file.setframerate(16000)
@@ -16,6 +17,8 @@ class _FakeVoice:
 def _reset_cache():
     tts._voice = None
     tts._loaded_name = None
+    tts._chatterbox = None
+    tts._chatterbox_failed = False
 
 
 def test_get_voice_reused_for_same_name(monkeypatch, tmp_path):
@@ -62,9 +65,95 @@ def test_synthesize_returns_nonempty_wav_bytes(monkeypatch, tmp_path):
     monkeypatch.setattr(tts.PiperVoice, "load", staticmethod(lambda path: _FakeVoice(path)))
     _reset_cache()
 
-    config = VoiceConfig(piper_voice="en_US-lessac-medium", piper_voices_dir=str(tmp_path))
-    audio = tts.synthesize("hello there", config)
+    config = VoiceConfig(piper_voice="en_US-lessac-medium", piper_voices_dir=str(tmp_path), tts_engine="piper")
+    audio, engine = tts.synthesize("hello there", config)
+
+    assert engine == "piper"
 
     assert isinstance(audio, bytes)
     assert audio.startswith(b"RIFF")
     assert len(audio) > 0
+
+
+class _FakeChatterbox:
+    def __init__(self, fail=False):
+        self.fail = fail
+        self.texts = []
+
+    def synthesize(self, text):
+        self.texts.append(text)
+        if self.fail:
+            raise RuntimeError("CUDA out of memory")
+        return b"RIFF-chatterbox"
+
+
+def _config(tmp_path, **kwargs):
+    return VoiceConfig(piper_voice="v", piper_voices_dir=str(tmp_path), **kwargs)
+
+
+def _patch(monkeypatch, loader):
+    monkeypatch.setattr(tts.PiperVoice, "load", staticmethod(lambda path: _FakeVoice(path)))
+    monkeypatch.setattr(tts, "_load_chatterbox", loader)
+    _reset_cache()
+
+
+def test_chatterbox_used_when_selected(monkeypatch, tmp_path):
+    fake = _FakeChatterbox()
+    _patch(monkeypatch, lambda config: fake)
+
+    audio, engine = tts.synthesize("[laugh] Hi there.", _config(tmp_path, tts_engine="chatterbox"))
+
+    assert (audio, engine) == (b"RIFF-chatterbox", "chatterbox")
+    assert fake.texts == ["Hi there."]
+
+
+def test_chatterbox_loaded_once(monkeypatch, tmp_path):
+    loads = []
+    _patch(monkeypatch, lambda config: loads.append(1) or _FakeChatterbox())
+    config = _config(tmp_path, tts_engine="chatterbox")
+
+    tts.init_engines(config)
+    tts.synthesize("One.", config)
+    tts.synthesize("Two.", config)
+
+    assert len(loads) == 1
+
+
+def test_piper_fallback_when_chatterbox_fails_to_load(monkeypatch, tmp_path, caplog):
+    def broken(config):
+        raise FileNotFoundError("no reference clip")
+
+    _patch(monkeypatch, broken)
+    config = _config(tmp_path, tts_engine="chatterbox")
+
+    audio, engine = tts.synthesize("Hello.", config)
+
+    assert engine == "piper"
+    assert audio.startswith(b"RIFF")
+    assert tts.active_engine(config) == "piper"
+    assert "Chatterbox failed to load" in caplog.text
+
+
+def test_piper_fallback_when_chatterbox_errors_on_a_request(monkeypatch, tmp_path, caplog):
+    fake = _FakeChatterbox(fail=True)
+    _patch(monkeypatch, lambda config: fake)
+    config = _config(tmp_path, tts_engine="chatterbox", allow_tags=True)
+
+    audio, engine = tts.synthesize("[sigh] Fine.", config)
+
+    assert engine == "piper"
+    assert audio.startswith(b"RIFF")
+    assert fake.texts == ["[sigh] Fine."]
+    assert tts._voice.last_text == "Fine."  # Piper never gets a tag
+    assert "Chatterbox errored on a request" in caplog.text
+
+
+def test_piper_engine_never_loads_chatterbox(monkeypatch, tmp_path):
+    def must_not_load(config):
+        raise AssertionError("chatterbox loaded")
+
+    _patch(monkeypatch, must_not_load)
+
+    _, engine = tts.synthesize("Hello.", _config(tmp_path, tts_engine="piper"))
+
+    assert engine == "piper"

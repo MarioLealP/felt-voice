@@ -1,17 +1,26 @@
-"""Text-to-speech via Piper, using its Python API directly (no CLI
-shell-out) — verified against the same voice used in the spike."""
+"""Text-to-speech: Chatterbox-Turbo (default) or Piper, selected by
+FELT_VOICE_TTS_ENGINE. Piper is also the automatic fallback whenever
+Chatterbox fails to load or errors on a request, so a broken Chatterbox
+degrades to the old voice path instead of a silent Felt."""
 
 import io
+import logging
 import wave
 from pathlib import Path
 
 from piper import PiperVoice
 
 from felt_voice.config import VoiceConfig
+from felt_voice.tags import strip_tags
 from felt_voice.text_normalize import normalize_for_speech
+
+log = logging.getLogger(__name__)
 
 _voice = None
 _loaded_name = None
+
+_chatterbox = None
+_chatterbox_failed = False
 
 
 def _get_voice(config: VoiceConfig) -> PiperVoice:
@@ -23,9 +32,60 @@ def _get_voice(config: VoiceConfig) -> PiperVoice:
     return _voice
 
 
-def synthesize(text: str, config: VoiceConfig) -> bytes:
+def _load_chatterbox(config: VoiceConfig):
+    from felt_voice.chatterbox_engine import ChatterboxEngine
+
+    return ChatterboxEngine(config)
+
+
+def init_engines(config: VoiceConfig) -> None:
+    """Loads the configured engine once (at startup), plus Piper so the
+    fallback is instant. A Chatterbox load failure is logged, not raised."""
+    global _chatterbox, _chatterbox_failed
+    _get_voice(config)
+    if config.tts_engine == "chatterbox" and _chatterbox is None and not _chatterbox_failed:
+        try:
+            _chatterbox = _load_chatterbox(config)
+        except Exception as exc:
+            _chatterbox_failed = True
+            log.warning("Chatterbox failed to load, falling back to Piper: %r", exc)
+
+
+def active_engine(config: VoiceConfig) -> str:
+    return "chatterbox" if config.tts_engine == "chatterbox" and _chatterbox is not None else "piper"
+
+
+def prepare_text(text: str, config: VoiceConfig) -> str:
+    return normalize_for_speech(strip_tags(text, allow=config.allow_tags))
+
+
+def silence_wav(seconds: float = 0.2, rate: int = 24000) -> bytes:
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(rate)
+        wav_file.writeframes(b"\x00\x00" * int(seconds * rate))
+    return buffer.getvalue()
+
+
+def _piper(text: str, config: VoiceConfig) -> bytes:
     voice = _get_voice(config)
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as wav_file:
-        voice.synthesize_wav(normalize_for_speech(text), wav_file)
+        # Piper would read a tag out loud, so it never gets one.
+        voice.synthesize_wav(strip_tags(text), wav_file)
     return buffer.getvalue()
+
+
+def synthesize(text: str, config: VoiceConfig) -> tuple[bytes, str]:
+    """Returns (wav_bytes, engine_used). Pre-RVC audio."""
+    text = prepare_text(text, config)
+    if config.tts_engine == "chatterbox":
+        init_engines(config)  # no-op once loaded (or once it has failed)
+        if _chatterbox is not None:
+            try:
+                return _chatterbox.synthesize(text), "chatterbox"
+            except Exception as exc:
+                log.warning("Chatterbox errored on a request, falling back to Piper: %r", exc)
+    return _piper(text, config), "piper"

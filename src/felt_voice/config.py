@@ -1,5 +1,7 @@
 """Config — same no-hardcoding discipline as felt-core."""
 
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +14,18 @@ class VoiceConfig(BaseSettings):
     whisper_model: str = "base.en"
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
+
+    # TTS engine. "chatterbox" = Chatterbox-Turbo zero-shot cloning a Teto
+    # reference clip (Mario approved it over Piper after an A/B listen,
+    # 2026-09-25: "much better"); "piper" = the original engine. Either way
+    # the output goes through the same RVC Teto pass (one voice). Piper stays
+    # loaded as the automatic fallback if Chatterbox fails to load or errors.
+    tts_engine: Literal["chatterbox", "piper"] = "chatterbox"
+    chatterbox_ref_wav: str = "./models/chatterbox/teto_ref.wav"
+    chatterbox_device: str = "cuda"
+    # Fit next to the chat model on the Nitro5's 6 GB card: T3 in bf16, the
+    # conditioning-only encoders parked on CPU after the reference is baked.
+    chatterbox_low_vram: bool = True
 
     # Keep curatable Chatterbox tags ([sigh], [gasp], ...) instead of
     # stripping every one. Off for live speech; for WP-19's offline batch.
