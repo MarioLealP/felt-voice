@@ -1,6 +1,16 @@
 """felt-voice's frontend API — what felt-core or a dashboard/overlay
 client actually calls for speech in/out."""
 
+import os
+
+# Must run before anything imports huggingface_hub: it reads HF_HUB_OFFLINE
+# once, at import time. config.py itself only imports pydantic.
+from felt_voice.config import load_config as _load_config_early
+
+if _load_config_early().hf_offline:
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
 import logging
 import tempfile
 import time

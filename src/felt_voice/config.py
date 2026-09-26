@@ -32,6 +32,11 @@ class VoiceConfig(BaseSettings):
     # [laugh]/[chuckle] are stripped regardless. See tags.py.
     allow_tags: bool = False
 
+    # Load every Hugging Face model from the local cache only, no Hub
+    # round trip on startup (Chatterbox otherwise checks the Hub each boot).
+    # Set false to let a new model version download.
+    hf_offline: bool = True
+
     # Piper (fallback engine, or primary with tts_engine=piper)
     piper_voice: str = "en_US-lessac-medium"
     piper_voices_dir: str = "./voices"
