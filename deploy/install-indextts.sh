@@ -8,7 +8,8 @@ D=~/felt-indextts; mkdir -p $D; cd $D
 [ -d index-tts ] || git clone -q https://github.com/index-tts/index-tts.git
 cd index-tts && git fetch -q && git checkout -q $PIN
 uv sync -q
-VIRTUAL_ENV=.venv uv pip install -q "pydantic-settings>=2.10"
+# The service's own deps (IndexTTS's base install has no web server).
+VIRTUAL_ENV=.venv uv pip install -q "pydantic-settings>=2.10" "fastapi>=0.115" "uvicorn>=0.30" soundfile
 [ -f checkpoints/config.yaml ] || uv tool run --from huggingface_hub hf download IndexTeam/IndexTTS-2.5 --local-dir=checkpoints
 # Teto reference clip (Apache-2.0, NeatAvocado14/KasaneTeto-GPTSoVITS-V2)
 R=~/felt-voice/models/indextts/teto_ref_ja.wav
