@@ -1,0 +1,19 @@
+[Unit]
+Description=felt-indextts (IndexTTS-2.5 base voice for felt-voice)
+After=network.target
+Before=felt-voice.service
+
+[Service]
+Type=simple
+User=benylin
+# IndexTTS's own clone and venv (its pins clash with felt-voice's).
+WorkingDirectory=/home/benylin/felt-indextts/index-tts
+Environment=PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+Environment=HF_HUB_OFFLINE=1
+Environment=TRANSFORMERS_OFFLINE=1
+ExecStart=/home/benylin/felt-indextts/index-tts/.venv/bin/python /home/benylin/felt-voice/indextts_service/server.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

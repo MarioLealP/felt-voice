@@ -20,7 +20,15 @@ class VoiceConfig(BaseSettings):
     # 2026-09-25: "much better"); "piper" = the original engine. Either way
     # the output goes through the same RVC Teto pass (one voice). Piper stays
     # loaded as the automatic fallback if Chatterbox fails to load or errors.
-    tts_engine: Literal["chatterbox", "piper"] = "chatterbox"
+    # "indextts" (2026-09-29, Mario's A/B pick "idx -4") = IndexTTS-2.5
+    # reading with Teto's own reference clip, via the separate felt-indextts
+    # service (indextts_service/server.py, its own venv), with a per-line
+    # mood; then the same RVC pass, at rvc_pitch.
+    tts_engine: Literal["chatterbox", "piper", "indextts"] = "chatterbox"
+    indextts_url: str = "http://127.0.0.1:8431"
+    # Synthesis of a long line takes ~its own duration on the 3060, so the
+    # timeout is generous.
+    indextts_timeout_s: float = 60.0
     chatterbox_ref_wav: str = "./models/chatterbox/teto_ref.wav"
     chatterbox_device: str = "cuda"
     # Fit next to the chat model on the Nitro5's 6 GB card: T3 in bf16, the
@@ -50,6 +58,9 @@ class VoiceConfig(BaseSettings):
     rvc_model_path: str | None = None
     rvc_index_path: str | None = None
     rvc_index_influence: float = 0.66
+    # Semitones. -4 with the indextts engine (Mario's A/B, 2026-09-29: the
+    # IndexTTS Teto base sounds "sultry" at 0 and childlike above it).
+    rvc_pitch: int = 0
     # CPU by default, same reasoning as Whisper above: a real inference
     # spike (2026-09-12) measured ~3s steady-state CPU latency for a
     # ~3.5s clip — acceptable added latency for a synchronous TTS

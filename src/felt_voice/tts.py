@@ -1,13 +1,15 @@
-"""Text-to-speech: Chatterbox-Turbo (default) or Piper, selected by
-FELT_VOICE_TTS_ENGINE. Piper is also the automatic fallback whenever
-Chatterbox fails to load or errors on a request, so a broken Chatterbox
-degrades to the old voice path instead of a silent Felt."""
+"""Text-to-speech: Chatterbox-Turbo, IndexTTS-2.5 (via the felt-indextts
+service) or Piper, selected by FELT_VOICE_TTS_ENGINE. Piper is also the
+automatic fallback whenever the configured engine fails to load or errors
+on a request, so a broken engine degrades to the old voice path instead of
+a silent Felt."""
 
 import io
 import logging
 import wave
 from pathlib import Path
 
+import httpx
 from piper import PiperVoice
 
 from felt_voice.config import VoiceConfig
@@ -52,6 +54,8 @@ def init_engines(config: VoiceConfig) -> None:
 
 
 def active_engine(config: VoiceConfig) -> str:
+    if config.tts_engine == "indextts":
+        return "indextts"
     return "chatterbox" if config.tts_engine == "chatterbox" and _chatterbox is not None else "piper"
 
 
@@ -78,9 +82,25 @@ def _piper(text: str, config: VoiceConfig) -> bytes:
     return buffer.getvalue()
 
 
-def synthesize(text: str, config: VoiceConfig) -> tuple[bytes, str]:
-    """Returns (wav_bytes, engine_used). Pre-RVC audio."""
+def _indextts(text: str, emotion: str | None, config: VoiceConfig) -> bytes:
+    resp = httpx.post(
+        f"{config.indextts_url}/tts",
+        json={"text": text, "emotion": emotion},
+        timeout=config.indextts_timeout_s,
+    )
+    resp.raise_for_status()
+    return resp.content
+
+
+def synthesize(text: str, config: VoiceConfig, emotion: str | None = None) -> tuple[bytes, str]:
+    """Returns (wav_bytes, engine_used). Pre-RVC audio. `emotion` (one of
+    felt-core's mood words) is used by the indextts engine only."""
     text = prepare_text(text, config)
+    if config.tts_engine == "indextts":
+        try:
+            return _indextts(text, emotion, config), "indextts"
+        except Exception as exc:
+            log.warning("IndexTTS errored on a request, falling back to Piper: %r", exc)
     if config.tts_engine == "chatterbox":
         init_engines(config)  # no-op once loaded (or once it has failed)
         if _chatterbox is not None:

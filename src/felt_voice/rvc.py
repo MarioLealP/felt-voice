@@ -30,14 +30,14 @@ def _get_converter(config: VoiceConfig) -> BaseLoader:
     # off/on across config changes) reloads rather than silently reusing
     # stale weights — same cache-invalidation pattern as tts.py's
     # _get_voice and stt.py's _get_model.
-    key = (config.rvc_model_path, config.rvc_index_path)
+    key = (config.rvc_model_path, config.rvc_index_path, config.rvc_pitch)
     if _converter is None or _loaded_key != key:
         _converter = BaseLoader(only_cpu=config.rvc_only_cpu, hubert_path=None, rmvpe_path=None)
         _converter.apply_conf(
             tag="rvc",
             file_model=config.rvc_model_path,
             pitch_algo="rmvpe+",
-            pitch_lvl=0,
+            pitch_lvl=config.rvc_pitch,
             file_index=config.rvc_index_path or "",
             index_influence=config.rvc_index_influence,
             respiration_median_filtering=3,

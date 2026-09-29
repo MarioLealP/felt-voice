@@ -157,3 +157,49 @@ def test_piper_engine_never_loads_chatterbox(monkeypatch, tmp_path):
     _, engine = tts.synthesize("Hello.", _config(tmp_path, tts_engine="piper"))
 
     assert engine == "piper"
+
+
+class _FakeResp:
+    def __init__(self, content=b"RIFF-indextts", fail=False):
+        self.content = content
+        self.fail = fail
+
+    def raise_for_status(self):
+        if self.fail:
+            raise RuntimeError("503")
+
+
+def test_indextts_used_when_selected_and_gets_the_emotion(monkeypatch, tmp_path):
+    calls = []
+    _patch(monkeypatch, lambda config: _FakeChatterbox())
+    monkeypatch.setattr(tts.httpx, "post", lambda url, json, timeout: calls.append((url, json)) or _FakeResp())
+    config = _config(tmp_path, tts_engine="indextts", indextts_url="http://tts:1")
+
+    audio, engine = tts.synthesize("[sigh] Go to bed.", config, emotion="sleepy")
+
+    assert (audio, engine) == (b"RIFF-indextts", "indextts")
+    assert calls == [("http://tts:1/tts", {"text": "Go to bed.", "emotion": "sleepy"})]
+    assert tts.active_engine(config) == "indextts"
+
+
+def test_piper_fallback_when_indextts_errors(monkeypatch, tmp_path, caplog):
+    _patch(monkeypatch, lambda config: _FakeChatterbox())
+    monkeypatch.setattr(tts.httpx, "post", lambda url, json, timeout: _FakeResp(fail=True))
+
+    audio, engine = tts.synthesize("Hello.", _config(tmp_path, tts_engine="indextts"))
+
+    assert engine == "piper"
+    assert audio.startswith(b"RIFF")
+    assert "IndexTTS errored" in caplog.text
+
+
+def test_indextts_engine_never_loads_chatterbox(monkeypatch, tmp_path):
+    loads = []
+    _patch(monkeypatch, lambda config: loads.append(1) or _FakeChatterbox())
+    monkeypatch.setattr(tts.httpx, "post", lambda url, json, timeout: _FakeResp())
+    config = _config(tmp_path, tts_engine="indextts")
+
+    tts.init_engines(config)
+    tts.synthesize("Hi.", config)
+
+    assert loads == []

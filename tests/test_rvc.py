@@ -95,3 +95,22 @@ def test_convert_passes_only_cpu_setting_through(monkeypatch):
     rvc.convert(b"data", config)
 
     assert seen["only_cpu"] is False
+
+
+def test_rvc_pitch_is_applied_and_changing_it_reloads(monkeypatch):
+    created = []
+
+    def fake_ctor(only_cpu, hubert_path, rmvpe_path):
+        instance = _FakeConverter(only_cpu, hubert_path, rmvpe_path)
+        created.append(instance)
+        return instance
+
+    monkeypatch.setattr(rvc, "BaseLoader", fake_ctor)
+    _reset_cache()
+
+    rvc._get_converter(VoiceConfig(rvc_model_path="m.pth", rvc_pitch=-4))
+    rvc._get_converter(VoiceConfig(rvc_model_path="m.pth", rvc_pitch=0))
+
+    assert len(created) == 2
+    assert created[0].confs[0]["pitch_lvl"] == -4
+    assert created[1].confs[0]["pitch_lvl"] == 0
