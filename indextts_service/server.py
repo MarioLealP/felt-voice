@@ -47,8 +47,18 @@ class Settings(BaseSettings):
     model_dir: str = "checkpoints"
     ref_wav: str = "/home/benylin/felt-voice/models/indextts/teto_ref_ja.wav"
     lang: str = "EN"
-    # Scales every emotion vector: 1.0 = the table below as-is.
-    emotion_strength: float = 1.0
+    # Scales every emotion vector (after normalizing, below). 0.6 = Mario's
+    # pick by ear, 2026-09-30 ("60% for normal mood"), from now / 100% / 60%
+    # / 35% takes of all eight moods: enough mood to hear, still mostly
+    # Teto's own delivery instead of IndexTTS's stock emotion presets.
+    emotion_strength: float = 0.6
+    # Pass the vector through IndexTTS's own normalize_emo_vec first (what
+    # its web UI does): de-emphasises surprised/calm, caps the sum at 0.8.
+    # The sum is how much of the delivery comes from IndexTTS's stock
+    # emotion presets instead of the reference voice - raw table vectors
+    # summing to ~0.9 made every mood line sound like an exclaiming stock
+    # actor (Mario, 2026-09-30).
+    emotion_normalize: bool = True
     host: str = "127.0.0.1"
     port: int = 8431
 
@@ -116,8 +126,13 @@ _tts = None
 _lock = threading.Lock()  # one GPU, one request at a time
 
 
-def synthesize(text: str, emotion: str | None) -> bytes:
-    vec = emotion_vector(emotion, settings.emotion_strength)
+def synthesize(text: str, emotion: str | None, strength: float | None = None, normalize: bool | None = None) -> bytes:
+    vec = emotion_vector(emotion, 1.0)
+    if vec is not None:
+        if settings.emotion_normalize if normalize is None else normalize:
+            vec = _tts.normalize_emo_vec(vec, apply_bias=True)
+        s = settings.emotion_strength if strength is None else strength
+        vec = [round(v * s, 3) for v in vec]
     kwargs = {"emo_vector": vec, "use_random": False} if vec else {}
     with _lock:
         t0 = time.perf_counter()
@@ -127,8 +142,8 @@ def synthesize(text: str, emotion: str | None) -> bytes:
         buf = io.BytesIO()
         sf.write(buf, samples.reshape(-1) if hasattr(samples, "reshape") else samples, sr, format="WAV", subtype="PCM_16")
         log.info(
-            "indextts chars=%d emotion=%s synth_s=%.3f audio_s=%.2f",
-            len(text), emotion or "neutral", time.perf_counter() - t0, len(samples.reshape(-1)) / sr,
+            "indextts chars=%d emotion=%s vec=%s synth_s=%.3f audio_s=%.2f",
+            len(text), emotion or "neutral", vec, time.perf_counter() - t0, len(samples.reshape(-1)) / sr,
         )
     return buf.getvalue()
 
@@ -156,13 +171,16 @@ app = FastAPI(title="felt-indextts", lifespan=lifespan)
 class TTSRequest(BaseModel):
     text: str
     emotion: str | None = None
+    # Per-request overrides of the settings above (A/B listening tests).
+    emotion_strength: float | None = None
+    emotion_normalize: bool | None = None
 
 
 @app.post("/tts")
 def tts_endpoint(req: TTSRequest) -> Response:
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="empty text")
-    return Response(content=synthesize(req.text, req.emotion), media_type="audio/wav")
+    return Response(content=synthesize(req.text, req.emotion, req.emotion_strength, req.emotion_normalize), media_type="audio/wav")
 
 
 @app.get("/health")

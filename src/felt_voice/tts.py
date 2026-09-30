@@ -82,23 +82,25 @@ def _piper(text: str, config: VoiceConfig) -> bytes:
     return buffer.getvalue()
 
 
-def _indextts(text: str, emotion: str | None, config: VoiceConfig) -> bytes:
+def _indextts(text: str, emotion: str | None, config: VoiceConfig, overrides: dict | None = None) -> bytes:
     resp = httpx.post(
         f"{config.indextts_url}/tts",
-        json={"text": text, "emotion": emotion},
+        json={"text": text, "emotion": emotion, **(overrides or {})},
         timeout=config.indextts_timeout_s,
     )
     resp.raise_for_status()
     return resp.content
 
 
-def synthesize(text: str, config: VoiceConfig, emotion: str | None = None) -> tuple[bytes, str]:
+def synthesize(
+    text: str, config: VoiceConfig, emotion: str | None = None, overrides: dict | None = None
+) -> tuple[bytes, str]:
     """Returns (wav_bytes, engine_used). Pre-RVC audio. `emotion` (one of
     felt-core's mood words) is used by the indextts engine only."""
     text = prepare_text(text, config)
     if config.tts_engine == "indextts":
         try:
-            return _indextts(text, emotion, config), "indextts"
+            return _indextts(text, emotion, config, overrides), "indextts"
         except Exception as exc:
             log.warning("IndexTTS errored on a request, falling back to Piper: %r", exc)
     if config.tts_engine == "chatterbox":

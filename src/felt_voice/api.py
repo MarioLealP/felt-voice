@@ -30,13 +30,13 @@ from felt_voice.stt import transcribe
 log = logging.getLogger("felt_voice.api")
 
 
-def _speak(text: str, config: VoiceConfig, emotion: str | None = None) -> bytes:
+def _speak(text: str, config: VoiceConfig, emotion: str | None = None, overrides: dict | None = None) -> bytes:
     """TTS then the RVC Teto pass, logging per-stage timing."""
     if not tts.prepare_text(text, config):
         # Nothing speakable (e.g. a tag-only request): short silence, no RVC.
         return tts.silence_wav()
     t0 = time.perf_counter()
-    audio, engine = tts.synthesize(text, config, emotion)
+    audio, engine = tts.synthesize(text, config, emotion, overrides)
     t1 = time.perf_counter()
     if config.rvc_model_path:
         audio = rvc_convert(audio, config)
@@ -69,6 +69,10 @@ class TTSRequest(BaseModel):
     # felt-core's mood word for the line (happy, excited, annoyed, sleepy,
     # ...). Only the indextts engine uses it; others ignore it.
     emotion: str | None = None
+    # indextts-only per-request overrides (A/B listening tests): see
+    # felt-indextts's emotion_strength / emotion_normalize settings.
+    emotion_strength: float | None = None
+    emotion_normalize: bool | None = None
 
 
 class STTResponse(BaseModel):
@@ -79,7 +83,8 @@ class STTResponse(BaseModel):
 async def tts_endpoint(req: TTSRequest) -> Response:
     # Deliberately synchronous inside the async handler: requests are
     # serialized, so the GPU models never run concurrently.
-    return Response(content=_speak(req.text, load_config(), req.emotion), media_type="audio/wav")
+    overrides = {k: v for k, v in (("emotion_strength", req.emotion_strength), ("emotion_normalize", req.emotion_normalize)) if v is not None}
+    return Response(content=_speak(req.text, load_config(), req.emotion, overrides), media_type="audio/wav")
 
 
 @app.post("/v1/stt", response_model=STTResponse)
