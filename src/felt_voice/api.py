@@ -108,4 +108,11 @@ async def gpu_status_endpoint() -> dict:
 def run() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     config = load_config()
-    uvicorn.run(app, host=config.host, port=config.port)
+    if config.tls_bundle:
+        from felt_voice import mtls
+
+        if not config.tls_ca:
+            raise SystemExit("FELT_VOICE_TLS_BUNDLE is set but FELT_VOICE_TLS_CA isn't")
+        mtls.serve(app, config.host, config.port, config.tls_bundle, config.tls_ca, config.tls_allowed_clients)
+    else:
+        uvicorn.run(app, host=config.host, port=config.port)

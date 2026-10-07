@@ -70,6 +70,11 @@ class VoiceConfig(BaseSettings):
 
     host: str = "0.0.0.0"
     port: int = 8421
+    # WP-62 M2b B5.1 (D4): mTLS, on when tls_bundle is set. The laptop's
+    # renewer writes both files (clockmost infra, projects/openbao/offhost).
+    tls_bundle: str | None = None  # .../service-identities/felt-voice/server/bundle.pem
+    tls_ca: str | None = None  # .../service-identities/felt-voice/felt-ca.pem
+    tls_allowed_clients: list[str] = ["spiffe://clockmost.internal/workload/felt-core"]
 
 
 def load_config() -> VoiceConfig:
