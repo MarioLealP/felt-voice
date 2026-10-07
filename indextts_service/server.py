@@ -26,9 +26,11 @@ An unknown or missing emotion speaks neutrally (the reference's own tone).
 
 import io
 import logging
+import sys
 import threading
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import soundfile as sf
 import torch
@@ -61,6 +63,12 @@ class Settings(BaseSettings):
     emotion_normalize: bool = True
     host: str = "127.0.0.1"
     port: int = 8431
+    # WP-62 M2b B5.7 (D11): mTLS, on when tls_bundle is set. This wrapper is part
+    # of the felt-voice workload: it serves felt-voice's own server cert
+    # (felt-voice.felt.internal) and lets only felt-voice's client cert in.
+    tls_bundle: str | None = None  # .../service-identities/felt-voice/server/bundle.pem
+    tls_ca: str | None = None  # .../service-identities/felt-voice/felt-ca.pem
+    tls_allowed_clients: list[str] = ["spiffe://clockmost.internal/workload/felt-voice"]
 
 
 # [happy, angry, sad, afraid, disgusted, melancholic, surprised, calm]
@@ -190,4 +198,14 @@ def health() -> dict:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    uvicorn.run(app, host=settings.host, port=settings.port)
+    if not settings.tls_bundle:
+        uvicorn.run(app, host=settings.host, port=settings.port)
+    elif not settings.tls_ca:
+        raise SystemExit("FELT_INDEXTTS_TLS_BUNDLE is set but FELT_INDEXTTS_TLS_CA isn't")
+    else:
+        # felt-voice's mtls module (uvicorn-only, no felt-voice deps), from this
+        # repo's src/ - this script runs in IndexTTS's own venv.
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+        from felt_voice import mtls
+
+        mtls.serve(app, settings.host, settings.port, settings.tls_bundle, settings.tls_ca, settings.tls_allowed_clients)

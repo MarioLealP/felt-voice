@@ -242,3 +242,63 @@ def test_refusal_logs_no_traceback(pki, server, caplog):
     time.sleep(0.3)
     assert "is not allowed" in caplog.text
     assert "Exception in callback" not in caplog.text
+
+
+FELT_VOICE = "spiffe://clockmost.internal/workload/felt-voice"
+
+
+def test_indextts_link_client_context(pki):
+    """B5.7: the indextts wrapper serves felt-voice's server cert and admits only
+    felt-voice's own client cert; felt-voice dials it with client_context()."""
+    _leaf(
+        pki,
+        "fvclient",
+        "feltint",
+        "basicConstraints=critical,CA:false\nextendedKeyUsage=clientAuth\n"
+        f"subjectAltName=DNS:felt-voice.felt.internal,URI:{FELT_VOICE}\n",
+    )
+    (pki / "fvclient.bundle").write_text(
+        (pki / "fvclient.key").read_text()
+        + (pki / "fvclient.pem").read_text()
+        + (pki / "feltint.pem").read_text()
+    )
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    threading.Thread(
+        target=mtls.serve,
+        args=(
+            _app,
+            "127.0.0.1",
+            port,
+            str(pki / "voice.bundle"),
+            str(pki / "feltint.pem"),
+            [FELT_VOICE],
+        ),
+        daemon=True,
+    ).start()
+    for _ in range(50):
+        try:
+            socket.create_connection(("127.0.0.1", port), 0.2).close()
+            break
+        except OSError:
+            time.sleep(0.1)
+
+    def get(bundle, name="felt-voice.felt.internal"):
+        ctx = mtls.client_context(str(pki / bundle), str(pki / "feltint.pem"))
+        with ctx.wrap_socket(
+            socket.create_connection(("127.0.0.1", port), 5), server_hostname=name
+        ) as c:
+            c.sendall(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+            return c.recv(200)
+
+    assert get("fvclient.bundle").startswith(b"HTTP/1.1 200")
+    try:
+        assert (
+            get("core.bundle") == b""
+        )  # felt-core's cert: valid Felt cert, wrong identity
+    except (ssl.SSLError, ConnectionError):
+        pass
+    with pytest.raises(ssl.SSLCertVerificationError):
+        get("fvclient.bundle", name="tray.felt.internal")
