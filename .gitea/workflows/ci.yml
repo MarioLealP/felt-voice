@@ -19,7 +19,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: uv sync
-
-      - name: test (pytest)
-        run: uv run pytest -v
+      # The full voice stack (torch + CUDA, several GB) doesn't fit the runner's
+      # disk, and its tests mock the models anyway - they run on the laptop with
+      # the real stack. CI runs the tests that need no models, in a small env
+      # pinned to uv.lock's versions.
+      - name: test (pytest, no-model tests)
+        run: >-
+          uv run --no-project --python 3.12
+          --with pytest==9.1.1 --with uvicorn==0.52.4 --with httptools==0.8.0
+          --with pydantic-settings==2.15.0
+          python -m pytest -v tests/test_mtls.py tests/test_tags.py tests/test_gpu_stats.py
+          -o pythonpath=src
