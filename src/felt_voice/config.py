@@ -75,6 +75,11 @@ class VoiceConfig(BaseSettings):
     tls_bundle: str | None = None  # .../service-identities/felt-voice/server/bundle.pem
     tls_ca: str | None = None  # .../service-identities/felt-voice/felt-ca.pem
     tls_allowed_clients: list[str] = ["spiffe://clockmost.internal/workload/felt-core"]
+    # WP-62 M2b B5.7 (D11): an https indextts_url = mTLS to the indextts wrapper,
+    # which is part of this workload: it serves felt-voice's own server cert and
+    # only lets felt-voice's client cert in. Verified by name on 127.0.0.1.
+    tls_client_bundle: str | None = None  # .../service-identities/felt-voice/client/bundle.pem
+    indextts_tls_name: str = "felt-voice.felt.internal"
 
 
 def load_config() -> VoiceConfig:

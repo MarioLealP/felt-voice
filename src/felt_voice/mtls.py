@@ -82,6 +82,17 @@ def watch_bundle(
             )
 
 
+def client_context(bundle: str, ca: str) -> ssl.SSLContext:
+    """Client side (WP-62 M2b B5.7, felt-voice -> its indextts wrapper): present
+    ``bundle``'s cert, trust ``felt-ca.pem`` only. Build one per call - the
+    renewer replaces the bundle hourly and this re-reads it."""
+    ctx = ssl.create_default_context(cafile=ca)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+    ctx.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN  # felt-ca.pem is an intermediate
+    ctx.load_cert_chain(bundle)
+    return ctx
+
+
 def serve(
     app, host: str, port: int, bundle: str, ca: str, allowed, reload_s: float = 60
 ) -> None:

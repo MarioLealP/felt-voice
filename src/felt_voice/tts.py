@@ -6,12 +6,14 @@ a silent Felt."""
 
 import io
 import logging
+import ssl
 import wave
 from pathlib import Path
 
 import httpx
 from piper import PiperVoice
 
+from felt_voice import mtls
 from felt_voice.config import VoiceConfig
 from felt_voice.tags import strip_tags
 from felt_voice.text_normalize import normalize_for_speech
@@ -83,11 +85,19 @@ def _piper(text: str, config: VoiceConfig) -> bytes:
 
 
 def _indextts(text: str, emotion: str | None, config: VoiceConfig, overrides: dict | None = None) -> bytes:
-    resp = httpx.post(
-        f"{config.indextts_url}/tts",
-        json={"text": text, "emotion": emotion, **(overrides or {})},
-        timeout=config.indextts_timeout_s,
-    )
+    verify: ssl.SSLContext | bool = True
+    extensions = {}
+    if config.indextts_url.startswith("https://"):  # WP-62 M2b B5.7 (D11)
+        if not (config.tls_client_bundle and config.tls_ca):
+            raise RuntimeError("an https indextts_url needs FELT_VOICE_TLS_CLIENT_BUNDLE + FELT_VOICE_TLS_CA")
+        verify = mtls.client_context(config.tls_client_bundle, config.tls_ca)
+        extensions = {"sni_hostname": config.indextts_tls_name}
+    with httpx.Client(verify=verify, timeout=config.indextts_timeout_s) as client:
+        resp = client.post(
+            f"{config.indextts_url}/tts",
+            json={"text": text, "emotion": emotion, **(overrides or {})},
+            extensions=extensions,
+        )
     resp.raise_for_status()
     return resp.content
 
