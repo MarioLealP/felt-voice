@@ -30,6 +30,13 @@ class ChatterboxEngine:
             raise FileNotFoundError(f"Chatterbox reference clip not found: {ref}")
         device = config.chatterbox_device
 
+        if config.chatterbox_lite and device.startswith("cuda"):
+            self.tts = ChatterboxTurboTTS.from_pretrained(device="cpu")
+            self.tts.watermarker.apply_watermark = lambda wav, sample_rate: wav
+            self.tts.prepare_conditionals(str(ref))
+            self._lite_to(torch.device(device))
+            return
+
         self.tts = ChatterboxTurboTTS.from_pretrained(device=device)
         self.tts.watermarker.apply_watermark = lambda wav, sample_rate: wav
         self.tts.prepare_conditionals(str(ref))
@@ -47,6 +54,24 @@ class ChatterboxEngine:
             self.tts.t3.to(dtype=torch.bfloat16)
             self.tts.conds.t3 = self.tts.conds.t3.to(dtype=torch.bfloat16)
             torch.cuda.empty_cache()
+
+    def _lite_to(self, gpu: torch.device) -> None:
+        """chatterbox_lite: the model was loaded and the reference encoded on
+        the CPU; move only what generate() runs to `gpu` (fp32)."""
+        m = self.tts
+        m.t3.to(gpu)
+        m.s3gen.flow.to(gpu)
+        m.s3gen.mel2wav.to(gpu)
+        for name, buf in list(m.s3gen.named_buffers(recurse=False)):  # e.g. trim_fade
+            setattr(m.s3gen, name, buf.to(gpu))
+        # s3gen guesses its device from its first parameter (the CPU-side
+        # tokenizer): pin it
+        s3 = m.s3gen
+        s3.__class__ = type("S3GenPinned", (type(s3),), {"device": property(lambda _s: gpu)})
+        m.conds = m.conds.to(gpu)
+        m.conds.gen = {k: (v.to(gpu) if torch.is_tensor(v) else v) for k, v in m.conds.gen.items()}
+        m.device = gpu
+        torch.cuda.empty_cache()
 
     def synthesize(self, text: str) -> bytes:
         with torch.inference_mode():
