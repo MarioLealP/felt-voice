@@ -1,3 +1,8 @@
+import io
+
+import numpy as np
+import soundfile as sf
+
 from felt_voice import rvc
 from felt_voice.config import VoiceConfig
 
@@ -114,3 +119,53 @@ def test_rvc_pitch_is_applied_and_changing_it_reloads(monkeypatch):
     assert len(created) == 2
     assert created[0].confs[0]["pitch_lvl"] == -4
     assert created[1].confs[0]["pitch_lvl"] == 0
+
+
+# -- long audio in pieces (2026-10-21: one long sentence OOMed RVC on the 1660)
+
+
+def _tone(seconds, rate=16000, gaps=()):
+    """A loud tone with silent 100 ms gaps at the given seconds."""
+    t = np.arange(int(seconds * rate)) / rate
+    samples = (0.5 * np.sin(2 * np.pi * 220 * t)).astype("float32")
+    for g in gaps:
+        samples[int(g * rate) : int((g + 0.1) * rate)] = 0
+    return samples
+
+
+def test_split_points_cut_in_the_pause_before_each_limit():
+    rate = 16000
+    cuts = rvc.split_points(_tone(20, rate, gaps=(7.0, 14.5)), rate, 8)
+    assert len(cuts) == 2
+    assert 7.0 * rate <= cuts[0] < 7.1 * rate
+    assert 14.5 * rate <= cuts[1] < 14.6 * rate
+
+
+def test_short_audio_is_never_split():
+    assert rvc.split_points(_tone(5), 16000, 8) == []
+
+
+class _ResampleConverter(_FakeConverter):
+    """Converts like RVC does: reads the WAV, writes it back at 40 kHz."""
+
+    def __call__(self, path, tag, overwrite=False):
+        self.calls.append((path, tag, overwrite))
+        samples, rate = sf.read(path, dtype="float32")
+        out = np.repeat(samples, 40000 // rate)
+        sf.write(path, out, 40000, format="WAV", subtype="PCM_16")
+        return [path]
+
+
+def test_convert_in_pieces_joins_them_back(monkeypatch):
+    fake = _ResampleConverter(False, None, None)
+    monkeypatch.setattr(rvc, "BaseLoader", lambda only_cpu, hubert_path, rmvpe_path: fake)
+    _reset_cache()
+    buffer = io.BytesIO()
+    sf.write(buffer, _tone(20, 8000, gaps=(7.0, 14.5)), 8000, format="WAV", subtype="PCM_16")
+
+    out = rvc.convert(buffer.getvalue(), VoiceConfig(rvc_model_path="m.pth", rvc_max_seconds=8))
+
+    assert len(fake.calls) == 3
+    samples, rate = sf.read(io.BytesIO(out))
+    assert rate == 40000
+    assert abs(len(samples) / rate - 20) < 0.01

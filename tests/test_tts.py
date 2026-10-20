@@ -169,10 +169,29 @@ class _FakeResp:
             raise RuntimeError("503")
 
 
+def _fake_client(post):
+    """httpx.Client stand-in (tts._indextts opens one per request since B5.7)."""
+
+    class Client:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def post(self, url, json, extensions=None):
+            return post(url, json)
+
+    return Client
+
+
 def test_indextts_used_when_selected_and_gets_the_emotion(monkeypatch, tmp_path):
     calls = []
     _patch(monkeypatch, lambda config: _FakeChatterbox())
-    monkeypatch.setattr(tts.httpx, "post", lambda url, json, timeout: calls.append((url, json)) or _FakeResp())
+    monkeypatch.setattr(tts.httpx, "Client", _fake_client(lambda url, json: calls.append((url, json)) or _FakeResp()))
     config = _config(tmp_path, tts_engine="indextts", indextts_url="http://tts:1")
 
     audio, engine = tts.synthesize("[sigh] Go to bed.", config, emotion="sleepy")
@@ -184,7 +203,7 @@ def test_indextts_used_when_selected_and_gets_the_emotion(monkeypatch, tmp_path)
 
 def test_piper_fallback_when_indextts_errors(monkeypatch, tmp_path, caplog):
     _patch(monkeypatch, lambda config: _FakeChatterbox())
-    monkeypatch.setattr(tts.httpx, "post", lambda url, json, timeout: _FakeResp(fail=True))
+    monkeypatch.setattr(tts.httpx, "Client", _fake_client(lambda url, json: _FakeResp(fail=True)))
 
     audio, engine = tts.synthesize("Hello.", _config(tmp_path, tts_engine="indextts"))
 
@@ -196,7 +215,7 @@ def test_piper_fallback_when_indextts_errors(monkeypatch, tmp_path, caplog):
 def test_indextts_engine_never_loads_chatterbox(monkeypatch, tmp_path):
     loads = []
     _patch(monkeypatch, lambda config: loads.append(1) or _FakeChatterbox())
-    monkeypatch.setattr(tts.httpx, "post", lambda url, json, timeout: _FakeResp())
+    monkeypatch.setattr(tts.httpx, "Client", _fake_client(lambda url, json: _FakeResp()))
     config = _config(tmp_path, tts_engine="indextts")
 
     tts.init_engines(config)

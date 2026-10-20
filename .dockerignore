@@ -1,0 +1,8 @@
+.venv
+.git
+**/__pycache__
+models
+voices
+indextts_service
+*.pt
+*.log

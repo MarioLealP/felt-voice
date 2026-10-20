@@ -34,6 +34,13 @@ class VoiceConfig(BaseSettings):
     # Fit next to the chat model on the Nitro5's 6 GB card: T3 in bf16, the
     # conditioning-only encoders parked on CPU after the reference is baked.
     chatterbox_low_vram: bool = True
+    # The server layout (2026-10-21, beside Felt's brain on both cards): the
+    # reference is encoded once on the CPU and its tokenizer + speaker
+    # encoders stay there; only t3 + flow + mel2wav go to chatterbox_device,
+    # in fp32 (fp16 on the P104 is crippled: RTF 1.5-1.7). ~2.1 GB weights,
+    # 2.4 GB peak, RTF ~0.5-0.8 on the P104 (workspace felt-model-spike.md
+    # section 12). Takes precedence over chatterbox_low_vram.
+    chatterbox_lite: bool = False
 
     # Keep curatable Chatterbox tags ([sigh], [gasp], ...) instead of
     # stripping every one. Off for live speech; for WP-19's offline batch.
@@ -67,6 +74,10 @@ class VoiceConfig(BaseSettings):
     # request, so there's no need to fight Ollama for the Nitro5's tight
     # 6GB card the way the wake-word *training* job would have.
     rvc_only_cpu: bool = True
+    # Longer audio is converted in pieces of at most this many seconds, cut
+    # at the quietest moment near each limit - one long sentence OOMed RVC
+    # on the server's 1660 (~1.3 GB free beside the brain). 0 = never split.
+    rvc_max_seconds: float = 0
 
     host: str = "0.0.0.0"
     port: int = 8421
