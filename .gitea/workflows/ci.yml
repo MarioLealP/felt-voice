@@ -28,5 +28,5 @@ jobs:
           uv run --no-project --python 3.12
           --with pytest==9.1.1 --with uvicorn==0.52.4 --with httptools==0.8.0
           --with pydantic-settings==2.15.0
-          python -m pytest -v tests/test_mtls.py tests/test_tags.py tests/test_gpu_stats.py
+          python -m pytest -v tests/test_mtls.py tests/test_tags.py tests/test_gpu_stats.py tests/test_lang.py
           -o pythonpath=src

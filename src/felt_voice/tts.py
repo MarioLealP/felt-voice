@@ -1,5 +1,5 @@
-"""Text-to-speech: Chatterbox-Turbo, IndexTTS-2.5 (via the felt-indextts
-service) or Piper, selected by FELT_VOICE_TTS_ENGINE. Piper is also the
+"""Text-to-speech: Chatterbox-Turbo, Sopro, IndexTTS-2.5 (via the
+felt-indextts service) or Piper, selected by FELT_VOICE_TTS_ENGINE. Piper is also the
 automatic fallback whenever the configured engine fails to load or errors
 on a request, so a broken engine degrades to the old voice path instead of
 a silent Felt."""
@@ -25,6 +25,8 @@ _loaded_name = None
 
 _chatterbox = None
 _chatterbox_failed = False
+_sopro = None
+_sopro_failed = False
 
 
 def _get_voice(config: VoiceConfig) -> PiperVoice:
@@ -42,10 +44,17 @@ def _load_chatterbox(config: VoiceConfig):
     return ChatterboxEngine(config)
 
 
+def _load_sopro(config: VoiceConfig):
+    from felt_voice.sopro_engine import SoproEngine
+
+    return SoproEngine(config)
+
+
 def init_engines(config: VoiceConfig) -> None:
     """Loads the configured engine once (at startup), plus Piper so the
-    fallback is instant. A Chatterbox load failure is logged, not raised."""
-    global _chatterbox, _chatterbox_failed
+    fallback is instant. A Chatterbox or Sopro load failure is logged, not
+    raised."""
+    global _chatterbox, _chatterbox_failed, _sopro, _sopro_failed
     _get_voice(config)
     if config.tts_engine == "chatterbox" and _chatterbox is None and not _chatterbox_failed:
         try:
@@ -53,11 +62,19 @@ def init_engines(config: VoiceConfig) -> None:
         except Exception as exc:
             _chatterbox_failed = True
             log.warning("Chatterbox failed to load, falling back to Piper: %r", exc)
+    if config.tts_engine == "sopro" and _sopro is None and not _sopro_failed:
+        try:
+            _sopro = _load_sopro(config)
+        except Exception as exc:
+            _sopro_failed = True
+            log.warning("Sopro failed to load, falling back to Piper: %r", exc)
 
 
 def active_engine(config: VoiceConfig) -> str:
     if config.tts_engine == "indextts":
         return "indextts"
+    if config.tts_engine == "sopro":
+        return "sopro" if _sopro is not None else "piper"
     return "chatterbox" if config.tts_engine == "chatterbox" and _chatterbox is not None else "piper"
 
 
@@ -120,4 +137,11 @@ def synthesize(
                 return _chatterbox.synthesize(text), "chatterbox"
             except Exception as exc:
                 log.warning("Chatterbox errored on a request, falling back to Piper: %r", exc)
+    if config.tts_engine == "sopro":
+        init_engines(config)
+        if _sopro is not None:
+            try:
+                return _sopro.synthesize(text), "sopro"
+            except Exception as exc:
+                log.warning("Sopro errored on a request, falling back to Piper: %r", exc)
     return _piper(text, config), "piper"

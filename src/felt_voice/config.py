@@ -14,6 +14,14 @@ class VoiceConfig(BaseSettings):
     whisper_model: str = "base.en"
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
+    # "parakeet" = NVIDIA Parakeet TDT 0.6B v3 through onnx-asr, int8 on the
+    # CPU (2026-10-21 bench, workspace felt-voice-ptpt-spike.md: 1.6% WER in
+    # English, 14% on pt-PT voice commands, 0.23 s per command; base.en can't
+    # do Portuguese at all). Understands both languages, no language setting.
+    stt_engine: Literal["whisper", "parakeet"] = "whisper"
+    parakeet_model: str = "nemo-parakeet-tdt-0.6b-v3"
+    parakeet_quantization: str | None = "int8"
+    stt_threads: int = 4
 
     # TTS engine. "chatterbox" = Chatterbox-Turbo zero-shot cloning a Teto
     # reference clip (Mario approved it over Piper after an A/B listen,
@@ -24,7 +32,10 @@ class VoiceConfig(BaseSettings):
     # reading with Teto's own reference clip, via the separate felt-indextts
     # service (indextts_service/server.py, its own venv), with a per-line
     # mood; then the same RVC pass, at rvc_pitch.
-    tts_engine: Literal["chatterbox", "piper", "indextts"] = "chatterbox"
+    # "sopro" (2026-10-21, Mario's pick for English + European Portuguese) =
+    # Sopro V2 Turbo on the CPU cloning a Portuguese woman (sopro_ref_wav),
+    # then the RVC pass at rvc_pitch 0 - see sopro_engine.py.
+    tts_engine: Literal["chatterbox", "piper", "indextts", "sopro"] = "chatterbox"
     indextts_url: str = "http://127.0.0.1:8431"
     # Synthesis of a long line takes ~its own duration on the 3060, so the
     # timeout is generous.
@@ -46,6 +57,10 @@ class VoiceConfig(BaseSettings):
     # with the text, and one 480-char sentence OOMed the P104 beside the brain
     # (2026-10-21). 0 = never split.
     chatterbox_max_chars: int = 0
+
+    sopro_model: str = "samuel-vitorino/sopro-v2-turbo"
+    sopro_ref_wav: str = "./models/sopro/ref_pt.wav"
+    sopro_threads: int = 4
 
     # Keep curatable Chatterbox tags ([sigh], [gasp], ...) instead of
     # stripping every one. Off for live speech; for WP-19's offline batch.
