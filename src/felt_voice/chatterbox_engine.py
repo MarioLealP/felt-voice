@@ -13,7 +13,10 @@ irrelevant for a local assistant and costs CPU time per request.
 """
 
 import io
+import re
 from pathlib import Path
+
+import numpy as np
 
 import soundfile as sf
 import torch
@@ -29,6 +32,7 @@ class ChatterboxEngine:
         if not ref.is_file():
             raise FileNotFoundError(f"Chatterbox reference clip not found: {ref}")
         device = config.chatterbox_device
+        self.max_chars = config.chatterbox_max_chars
 
         if config.chatterbox_lite and device.startswith("cuda"):
             self.tts = ChatterboxTurboTTS.from_pretrained(device="cpu")
@@ -74,8 +78,34 @@ class ChatterboxEngine:
         torch.cuda.empty_cache()
 
     def synthesize(self, text: str) -> bytes:
+        pieces = []
         with torch.inference_mode():
-            wav = self.tts.generate(text)
+            for part in text_pieces(text, self.max_chars):
+                pieces.append(self.tts.generate(part).squeeze(0).float().cpu().numpy())
         buffer = io.BytesIO()
-        sf.write(buffer, wav.squeeze(0).float().cpu().numpy(), self.tts.sr, format="WAV", subtype="PCM_16")
+        sf.write(buffer, np.concatenate(pieces), self.tts.sr, format="WAV", subtype="PCM_16")
         return buffer.getvalue()
+
+
+_CLAUSE_END = re.compile(r"[,;:\u2013\u2014]\s|\s-\s|[.!?\u2026]\s")
+
+
+def text_pieces(text: str, max_chars: int) -> list[str]:
+    """`text` in pieces of at most `max_chars` (0 = whole), each cut after the
+    last clause break (, ; : dash, or a sentence end) inside the limit, else
+    at the last space - so she pauses where a speaker would."""
+    text = text.strip()
+    if max_chars <= 0:
+        return [text]
+    pieces = []
+    while len(text) > max_chars:
+        window = text[: max_chars + 1]
+        ends = [m.end() for m in _CLAUSE_END.finditer(window)]
+        cut = ends[-1] if ends else window.rfind(" ") + 1
+        if cut <= 0:
+            cut = max_chars
+        pieces.append(text[:cut].strip())
+        text = text[cut:].strip()
+    if text:
+        pieces.append(text)
+    return pieces
