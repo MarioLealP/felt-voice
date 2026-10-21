@@ -1,6 +1,7 @@
 import io
 
 import numpy as np
+import pytest
 import soundfile as sf
 
 from felt_voice import rvc
@@ -169,3 +170,19 @@ def test_convert_in_pieces_joins_them_back(monkeypatch):
     samples, rate = sf.read(io.BytesIO(out))
     assert rate == 40000
     assert abs(len(samples) / rate - 20) < 0.01
+
+
+class _DyingConverter(_FakeConverter):
+    """The real library when its worker thread crashes: nothing converted, []."""
+
+    def __call__(self, path, tag, overwrite=False):
+        self.calls.append((path, tag, overwrite))
+        return []
+
+
+def test_a_failed_conversion_raises_instead_of_returning_the_base_voice(monkeypatch):
+    monkeypatch.setattr(rvc, "BaseLoader", lambda only_cpu, hubert_path, rmvpe_path: _DyingConverter(False, None, None))
+    _reset_cache()
+    with pytest.raises(RuntimeError, match="RVC conversion failed"):
+        rvc.convert(b"RIFF-fake", VoiceConfig(rvc_model_path="m.pth"))
+

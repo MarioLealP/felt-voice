@@ -78,7 +78,12 @@ def _convert_whole(wav_bytes: bytes, converter: BaseLoader) -> bytes:
         # size/duration/sample-rate changed) that this writes the
         # converted audio back over the same path rather than a
         # differently-named output file.
-        converter(tmp.name, "rvc", overwrite=True)
+        done = converter(tmp.name, "rvc", overwrite=True)
+        if not done:
+            # The library converts in a thread; when that thread dies (CUDA
+            # OOM, 2026-10-21) it returns [] and leaves the file as it was -
+            # the base voice, not Teto's. One voice: fail instead.
+            raise RuntimeError("RVC conversion failed (see the traceback above)")
         return Path(tmp.name).read_bytes()
 
 

@@ -41,6 +41,11 @@ class VoiceConfig(BaseSettings):
     # 2.4 GB peak, RTF ~0.5-0.8 on the P104 (workspace felt-model-spike.md
     # section 12). Takes precedence over chatterbox_low_vram.
     chatterbox_lite: bool = False
+    # Longer text is spoken in pieces of at most this many characters, cut at
+    # a comma/semicolon/dash (else a space), and joined - Turbo's memory grows
+    # with the text, and one 480-char sentence OOMed the P104 beside the brain
+    # (2026-10-21). 0 = never split.
+    chatterbox_max_chars: int = 0
 
     # Keep curatable Chatterbox tags ([sigh], [gasp], ...) instead of
     # stripping every one. Off for live speech; for WP-19's offline batch.
