@@ -25,6 +25,7 @@ from felt_voice import tts
 from felt_voice.config import VoiceConfig, load_config
 from felt_voice.gpu_stats import get_gpu_stats
 from felt_voice.rvc import convert as rvc_convert
+from felt_voice import stt
 from felt_voice.stt import transcribe
 
 log = logging.getLogger("felt_voice.api")
@@ -54,6 +55,7 @@ async def lifespan(_app: FastAPI):
     t0 = time.perf_counter()
     tts.init_engines(config)
     log.info("tts engines loaded in %.1fs, active=%s", time.perf_counter() - t0, tts.active_engine(config))
+    stt.warm_up(config)
     try:
         _speak("Warm up.", config)  # loads RVC and CUDA kernels before the first real request
     except Exception as exc:

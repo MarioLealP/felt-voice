@@ -19,6 +19,8 @@ def _reset_cache():
     tts._loaded_name = None
     tts._chatterbox = None
     tts._chatterbox_failed = False
+    tts._sopro = None
+    tts._sopro_failed = False
 
 
 def test_get_voice_reused_for_same_name(monkeypatch, tmp_path):
@@ -222,3 +224,55 @@ def test_indextts_engine_never_loads_chatterbox(monkeypatch, tmp_path):
     tts.synthesize("Hi.", config)
 
     assert loads == []
+
+
+class _FakeSopro:
+    def __init__(self, fail=False):
+        self.fail = fail
+        self.texts = []
+
+    def synthesize(self, text):
+        if self.fail:
+            raise RuntimeError("boom")
+        self.texts.append(text)
+        return b"sopro-wav"
+
+
+def test_sopro_engine_used_when_configured(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts.PiperVoice, "load", staticmethod(lambda path: _FakeVoice(path)))
+    _reset_cache()
+    fake = _FakeSopro()
+    monkeypatch.setattr(tts, "_load_sopro", lambda config: fake)
+
+    config = VoiceConfig(tts_engine="sopro", piper_voices_dir=str(tmp_path))
+    audio, engine = tts.synthesize("Olá, tudo bem?", config)
+
+    assert (audio, engine) == (b"sopro-wav", "sopro")
+    assert fake.texts == ["Olá, tudo bem?"]
+    assert tts.active_engine(config) == "sopro"
+
+
+def test_sopro_error_falls_back_to_piper(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts.PiperVoice, "load", staticmethod(lambda path: _FakeVoice(path)))
+    _reset_cache()
+    monkeypatch.setattr(tts, "_load_sopro", lambda config: _FakeSopro(fail=True))
+
+    _audio, engine = tts.synthesize("Hello", VoiceConfig(tts_engine="sopro", piper_voices_dir=str(tmp_path)))
+
+    assert engine == "piper"
+
+
+def test_sopro_load_failure_falls_back_to_piper(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts.PiperVoice, "load", staticmethod(lambda path: _FakeVoice(path)))
+    _reset_cache()
+
+    def broken(config):
+        raise FileNotFoundError("no reference")
+
+    monkeypatch.setattr(tts, "_load_sopro", broken)
+    config = VoiceConfig(tts_engine="sopro", piper_voices_dir=str(tmp_path))
+
+    _audio, engine = tts.synthesize("Hello", config)
+
+    assert engine == "piper"
+    assert tts.active_engine(config) == "piper"
