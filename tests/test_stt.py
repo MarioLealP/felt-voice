@@ -73,7 +73,8 @@ def test_transcribe_joins_and_strips_segment_text(monkeypatch):
 
 
 class _FakeParakeet:
-    def recognize(self, audio_path):
+    def recognize(self, audio, sample_rate):
+        assert sample_rate == 16000
         return " Bora lá jogar. "
 
 
@@ -87,6 +88,7 @@ def test_parakeet_engine(monkeypatch):
         return _FakeParakeet()
 
     monkeypatch.setattr(stt, "_get_parakeet", fake_get)
+    monkeypatch.setattr(stt, "_decode_16k", lambda path: b"")
 
     assert stt.transcribe("x.wav", VoiceConfig(stt_engine="parakeet")) == "Bora lá jogar."
     assert loads == ["nemo-parakeet-tdt-0.6b-v3"]
