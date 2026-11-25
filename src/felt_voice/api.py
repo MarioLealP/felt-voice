@@ -11,6 +11,7 @@ if _load_config_early().hf_offline:
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
+import asyncio
 import logging
 import tempfile
 import time
@@ -81,12 +82,18 @@ class STTResponse(BaseModel):
     text: str
 
 
+# One model job at a time (the GPU models never run concurrently), in a worker thread so the event loop
+# keeps answering the health checks: a long clip used to block it past the liveness probe's 5 s, and the
+# kubelet killed the pod mid-sentence.
+_models = asyncio.Lock()
+
+
 @app.post("/v1/tts")
 async def tts_endpoint(req: TTSRequest) -> Response:
-    # Deliberately synchronous inside the async handler: requests are
-    # serialized, so the GPU models never run concurrently.
     overrides = {k: v for k, v in (("emotion_strength", req.emotion_strength), ("emotion_normalize", req.emotion_normalize)) if v is not None}
-    return Response(content=_speak(req.text, load_config(), req.emotion, overrides), media_type="audio/wav")
+    async with _models:
+        wav = await asyncio.to_thread(_speak, req.text, load_config(), req.emotion, overrides)
+    return Response(content=wav, media_type="audio/wav")
 
 
 @app.post("/v1/stt", response_model=STTResponse)
@@ -95,7 +102,8 @@ async def stt_endpoint(file: UploadFile = File(...)) -> STTResponse:
     with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
         tmp.write(await file.read())
         tmp.flush()
-        text = transcribe(tmp.name, config)
+        async with _models:
+            text = await asyncio.to_thread(transcribe, tmp.name, config)
     return STTResponse(text=text)
 
 
