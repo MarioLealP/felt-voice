@@ -39,4 +39,6 @@ testpaths = ["tests"]
 # torchcrepe 0.0.20 (via infer-rvc-python) pins librosa==0.9.1; chatterbox-tts
 # pins librosa==0.11.0. RVC runs fine on 0.11.0 (proven in felt-voice-next,
 # 2026-09-25), so override the stale pin.
-override-dependencies = ["librosa==0.11.0"]
+# gradio 6.8 (chatterbox-tts's demo UI, unused here) caps pillow <13, but pillow 12.x has critical CVEs
+# (CVE-2026-112393 and four more, fixed in 13.0.0) that block the release scan; felt-voice never serves gradio.
+override-dependencies = ["librosa==0.11.0", "pillow>=13.0.0"]
